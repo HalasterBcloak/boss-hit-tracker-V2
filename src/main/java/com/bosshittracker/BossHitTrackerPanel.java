@@ -187,7 +187,7 @@ class BossHitTrackerPanel extends PluginPanel
 		}
 		else
 		{
-			showKill(stats, kills.get(selectedKill), stats.getKills() - selectedKill);
+			showKill(kills.get(selectedKill), stats.getKills() - selectedKill);
 		}
 
 		content.add(Box.createVerticalStrut(6));
@@ -246,7 +246,7 @@ class BossHitTrackerPanel extends PluginPanel
 		addWeaponCards(stats.getWeapons(), totalDamage);
 	}
 
-	private void showKill(BossStats stats, KillRecord kill, int killNumber)
+	private void showKill(KillRecord kill, int killNumber)
 	{
 		SimpleDateFormat date = new SimpleDateFormat("MMM d, yyyy h:mm a");
 		content.add(sectionTitle("Kill #" + killNumber));
@@ -254,8 +254,61 @@ class BossHitTrackerPanel extends PluginPanel
 		content.add(textLine("Hits: " + NUMBER.format(kill.getTotalHits()) + "   Damage: " + NUMBER.format(kill.getTotalDamage()), Color.WHITE));
 		content.add(Box.createVerticalStrut(6));
 
-		content.add(sectionTitle("By weapon (this kill)"));
+		content.add(sectionTitle(kill.hasOtherPlayers() ? "Your weapons (this kill)" : "By weapon (this kill)"));
 		addWeaponCards(kill.getWeapons(), kill.getTotalDamage());
+
+		if (kill.hasOtherPlayers())
+		{
+			content.add(Box.createVerticalStrut(6));
+			content.add(sectionTitle("Party (this kill)"));
+			long everyone = kill.getEveryoneDamage();
+			List<Map.Entry<String, Map<String, WeaponStats>>> players = new ArrayList<>(kill.getPlayers().entrySet());
+			players.sort((a, b) -> Long.compare(KillRecord.totalDamage(b.getValue()), KillRecord.totalDamage(a.getValue())));
+			for (Map.Entry<String, Map<String, WeaponStats>> e : players)
+			{
+				content.add(playerCard(e.getKey(), e.getValue(), everyone));
+				content.add(Box.createVerticalStrut(4));
+			}
+		}
+	}
+
+	/** One player's damage in a kill, with a line per weapon. */
+	private JPanel playerCard(String player, Map<String, WeaponStats> weapons, long everyoneDamage)
+	{
+		JPanel card = new JPanel();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		card.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+		card.setAlignmentX(LEFT_ALIGNMENT);
+
+		long damage = KillRecord.totalDamage(weapons);
+		double share = everyoneDamage == 0 ? 0 : 100.0 * damage / everyoneDamage;
+		boolean unshared = KillRecord.OTHER_PLAYERS.equals(player);
+
+		JLabel name = new JLabel(player);
+		name.setFont(FontManager.getRunescapeBoldFont());
+		name.setForeground(unshared ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.BRAND_ORANGE);
+		card.add(leftAligned(name));
+		card.add(leftAligned(small(String.format("Dmg %s (%.0f%%)  ·  Hits %s", NUMBER.format(damage), share,
+			NUMBER.format(KillRecord.totalHits(weapons))))));
+
+		if (unshared)
+		{
+			card.add(leftAligned(small("Not sharing their hits")));
+			return fullWidth(card);
+		}
+
+		List<Map.Entry<String, WeaponStats>> sorted = new ArrayList<>(weapons.entrySet());
+		sorted.sort((a, b) -> Long.compare(b.getValue().getDamage(), a.getValue().getDamage()));
+		for (Map.Entry<String, WeaponStats> e : sorted)
+		{
+			WeaponStats w = e.getValue();
+			JLabel line = small(String.format("<html>%s<br>&nbsp;&nbsp;%s dmg · %d hits · max %d</html>",
+				e.getKey(), NUMBER.format(w.getDamage()), w.getHits(), w.getMaxHit()));
+			line.setBorder(new EmptyBorder(3, 0, 0, 0));
+			card.add(leftAligned(line));
+		}
+		return fullWidth(card);
 	}
 
 	private void addWeaponCards(Map<String, WeaponStats> weaponMap, long totalDamage)
@@ -291,8 +344,9 @@ class BossHitTrackerPanel extends PluginPanel
 	private JLabel killRow(BossStats stats, KillRecord k, int index)
 	{
 		boolean selected = index == selectedKill;
-		JLabel row = textLine(String.format("#%d  %s  %s dmg  %d hits",
-			stats.getKills() - index, duration(k), NUMBER.format(k.getTotalDamage()), k.getTotalHits()),
+		JLabel row = textLine(String.format("#%d  %s  %s dmg  %d hits%s",
+			stats.getKills() - index, duration(k), NUMBER.format(k.getTotalDamage()), k.getTotalHits(),
+			k.hasOtherPlayers() ? "  (party)" : ""),
 			selected ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
 		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		row.addMouseListener(new MouseAdapter()
@@ -332,6 +386,18 @@ class BossHitTrackerPanel extends PluginPanel
 		{
 			plugin.resetBoss(boss);
 		}
+	}
+
+	private static JPanel fullWidth(JPanel panel)
+	{
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, panel.getPreferredSize().height));
+		return panel;
+	}
+
+	private static JLabel leftAligned(JLabel label)
+	{
+		label.setAlignmentX(LEFT_ALIGNMENT);
+		return label;
 	}
 
 	private static JLabel fieldLabel(String text)

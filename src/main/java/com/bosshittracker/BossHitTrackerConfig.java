@@ -54,12 +54,23 @@ public interface BossHitTrackerConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "partyBreakdown",
+		name = "Party breakdown",
+		description = "When you're in a RuneLite Party, share your hits with the party and record each player's hits per weapon for every kill. Party members need Boss Hit Tracker installed; anyone else is listed as \"Other players\".",
+		position = 4
+	)
+	default boolean partyBreakdown()
+	{
+		return true;
+	}
+
 	@Range(min = 1, max = 200)
 	@ConfigItem(
 		keyName = "historySize",
 		name = "Kills kept per boss",
 		description = "How many individual kills to keep in each boss's kill history",
-		position = 4
+		position = 5
 	)
 	default int historySize()
 	{

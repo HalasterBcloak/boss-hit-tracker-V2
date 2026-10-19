@@ -43,11 +43,15 @@ import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.party.PartyMember;
+import net.runelite.client.party.PartyService;
+import net.runelite.client.party.WSClient;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
@@ -98,6 +102,15 @@ public class BossHitTrackerPlugin extends Plugin
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private ClientThread clientThread;
+
+	@Inject
+	private PartyService partyService;
+
+	@Inject
+	private WSClient wsClient;
+
 	private final Object lock = new Object();
 	private HitData data = new HitData();
 	private final Map<NPC, ActiveFight> activeFights = new HashMap<>();
@@ -140,6 +153,7 @@ public class BossHitTrackerPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 		overlayManager.add(overlay);
+		wsClient.registerMessage(BossHitPartyHit.class);
 
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
@@ -151,6 +165,7 @@ public class BossHitTrackerPlugin extends Plugin
 	protected void shutDown()
 	{
 		saveData();
+		wsClient.unregisterMessage(BossHitPartyHit.class);
 		overlayManager.remove(overlay);
 		clientToolbar.removeNavigation(navButton);
 		synchronized (lock)
@@ -212,7 +227,7 @@ public class BossHitTrackerPlugin extends Plugin
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
 		MenuAction action = event.getMenuAction();
-		if (WidgetUtil.componentToInterface(event.getWidgetId()) == InterfaceID.AUTOCAST)
+		if (WidgetUtil.componentToInterface(event.getParam1()) == InterfaceID.AUTOCAST)
 		{
 			// Picking a spell in the autocast menu: remember its name until the game confirms the choice
 			Widget widget = event.getWidget();
@@ -305,11 +320,19 @@ public class BossHitTrackerPlugin extends Plugin
 				for (KillRecord kill : stats.getRecentKills())
 				{
 					changed |= renameKeys(kill.weapons, oldSuffix, newSuffix);
+					for (Map<String, WeaponStats> playerWeapons : kill.getPlayers().values())
+					{
+						changed |= renameKeys(playerWeapons, oldSuffix, newSuffix);
+					}
 				}
 			}
 			for (ActiveFight fight : activeFights.values())
 			{
 				renameKeys(fight.record.weapons, oldSuffix, newSuffix);
+				for (Map<String, WeaponStats> playerWeapons : fight.record.getPlayers().values())
+				{
+					renameKeys(playerWeapons, oldSuffix, newSuffix);
+				}
 			}
 			if (lastAttackWeapon != null && lastAttackWeapon.endsWith(oldSuffix))
 			{
@@ -441,9 +464,15 @@ public class BossHitTrackerPlugin extends Plugin
 	@Subscribe
 	public void onHitsplatApplied(HitsplatApplied event)
 	{
+		if (!(event.getActor() instanceof NPC))
+		{
+			return;
+		}
 		Hitsplat hitsplat = event.getHitsplat();
-		// Only your own hits: excludes other players, poison, venom, recoil, etc.
-		if (!hitsplat.isMine() || !(event.getActor() instanceof NPC))
+		boolean mine = hitsplat.isMine();
+		// Other players' hits only matter for the party breakdown; poison, venom, recoil etc. are ignored
+		boolean others = !mine && hitsplat.isOthers() && config.partyBreakdown();
+		if (!mine && !others)
 		{
 			return;
 		}
@@ -455,18 +484,107 @@ public class BossHitTrackerPlugin extends Plugin
 			return;
 		}
 
-		String weapon = weaponForHit();
+		int amount = hitsplat.getAmount();
+		if (mine)
+		{
+			String weapon = weaponForHit();
+			synchronized (lock)
+			{
+				ActiveFight fight = fightFor(npc, name);
+				fight.record.addHit(weapon, amount);
+				if (config.partyBreakdown())
+				{
+					fight.record.addPlayerHit(localName(), weapon, amount);
+				}
+				currentFight = fight;
+			}
+			if (config.partyBreakdown() && partyService.isInParty())
+			{
+				partyService.send(new BossHitPartyHit(name, npc.getIndex(), weapon, amount));
+			}
+		}
+		else
+		{
+			synchronized (lock)
+			{
+				ActiveFight fight = fightFor(npc, name);
+				fight.othersSeenHits++;
+				fight.othersSeenDamage += amount;
+			}
+		}
+	}
+
+	/** A party member's hit, sent by their copy of the plugin. */
+	@Subscribe
+	public void onBossHitPartyHit(BossHitPartyHit hit)
+	{
+		// Party messages arrive on a network thread; handle them on the game thread
+		clientThread.invokeLater(() -> handlePartyHit(hit));
+	}
+
+	private void handlePartyHit(BossHitPartyHit hit)
+	{
+		if (!config.partyBreakdown() || hit.getWeapon() == null)
+		{
+			return;
+		}
+		PartyMember local = partyService.getLocalMember();
+		if (local != null && local.getMemberId() == hit.getMemberId())
+		{
+			return;
+		}
+		PartyMember member = partyService.getMemberById(hit.getMemberId());
+		String player = member == null || member.getDisplayName() == null ? "Party member" : member.getDisplayName();
+
 		synchronized (lock)
 		{
-			ActiveFight fight = activeFights.get(npc);
+			ActiveFight fight = null;
+			for (Map.Entry<NPC, ActiveFight> e : activeFights.entrySet())
+			{
+				if (e.getKey().getIndex() == hit.getNpcIndex())
+				{
+					fight = e.getValue();
+					break;
+				}
+			}
 			if (fight == null)
 			{
-				fight = new ActiveFight(name, System.currentTimeMillis());
-				activeFights.put(npc, fight);
+				// They hit the boss before you did: start tracking it if it's nearby
+				NPC npc = client.getTopLevelWorldView().npcs().byIndex(hit.getNpcIndex());
+				String name = npc == null ? null : npcName(npc);
+				if (name == null || !name.equals(hit.getBoss()))
+				{
+					return;
+				}
+				fight = fightFor(npc, name);
 			}
-			fight.record.addHit(weapon, hitsplat.getAmount());
-			currentFight = fight;
+			fight.record.addPlayerHit(player, hit.getWeapon(), hit.getAmount());
+			fight.partyReportedHits++;
+			fight.partyReportedDamage += hit.getAmount();
 		}
+	}
+
+	/** The fight for this NPC, starting one if needed. Call while holding the lock. */
+	private ActiveFight fightFor(NPC npc, String name)
+	{
+		ActiveFight fight = activeFights.get(npc);
+		if (fight == null)
+		{
+			fight = new ActiveFight(name, System.currentTimeMillis());
+			activeFights.put(npc, fight);
+		}
+		return fight;
+	}
+
+	private String localName()
+	{
+		PartyMember local = partyService.getLocalMember();
+		if (local != null && local.getDisplayName() != null && !local.getDisplayName().startsWith("<"))
+		{
+			return local.getDisplayName();
+		}
+		Player player = client.getLocalPlayer();
+		return player == null || player.getName() == null ? "You" : player.getName();
 	}
 
 	@Subscribe
@@ -506,6 +624,11 @@ public class BossHitTrackerPlugin extends Plugin
 			{
 				currentFight = null;
 			}
+			// Only count kills where you landed at least one hit
+			if (fight.record.getWeapons().isEmpty())
+			{
+				return;
+			}
 			// An NPC that despawns alive (you ran, it reset, you teleported) is not counted as a kill.
 			if (!fight.died && !npc.isDead())
 			{
@@ -516,6 +639,7 @@ public class BossHitTrackerPlugin extends Plugin
 			{
 				fight.record.durationMs = System.currentTimeMillis() - fight.record.timestamp;
 			}
+			finishPartyBreakdown(fight);
 			BossStats stats = data.bosses.get(fight.boss);
 			if (stats == null)
 			{
@@ -527,6 +651,27 @@ public class BossHitTrackerPlugin extends Plugin
 		log.debug("Recorded {} kill: {} hits, {} damage", fight.boss, fight.record.getTotalHits(), fight.record.getTotalDamage());
 		saveData();
 		refreshPanel();
+	}
+
+	/** Add damage from players who weren't sharing, and drop the breakdown for solo kills. */
+	private void finishPartyBreakdown(ActiveFight fight)
+	{
+		KillRecord record = fight.record;
+		if (record.players == null)
+		{
+			return;
+		}
+		int unsharedHits = fight.othersSeenHits - fight.partyReportedHits;
+		long unsharedDamage = fight.othersSeenDamage - fight.partyReportedDamage;
+		if (unsharedDamage > 0)
+		{
+			record.addOtherPlayers(Math.max(0, unsharedHits), unsharedDamage);
+		}
+		if (!record.hasOtherPlayers())
+		{
+			// Only your own hits: the normal weapon breakdown already covers it
+			record.players = null;
+		}
 	}
 
 	private boolean shouldTrack(NPC npc, String name)
@@ -680,9 +825,7 @@ public class BossHitTrackerPlugin extends Plugin
 			{
 				return null;
 			}
-			ActiveFight copy = new ActiveFight(currentFight.boss, currentFight.record.timestamp);
-			copy.record.weapons.putAll(currentFight.record.copy().weapons);
-			return copy;
+			return new ActiveFight(currentFight.boss, currentFight.record.copy());
 		}
 	}
 
@@ -691,16 +834,6 @@ public class BossHitTrackerPlugin extends Plugin
 		synchronized (lock)
 		{
 			data.bosses.remove(boss);
-		}
-		saveData();
-		refreshPanel();
-	}
-
-	void resetAll()
-	{
-		synchronized (lock)
-		{
-			data.bosses.clear();
 		}
 		saveData();
 		refreshPanel();

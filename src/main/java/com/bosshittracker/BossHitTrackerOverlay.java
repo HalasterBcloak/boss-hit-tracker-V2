@@ -66,6 +66,23 @@ class BossHitTrackerOverlay extends OverlayPanel
 			.rightColor(Color.GREEN)
 			.build());
 
+		// Party members' damage this fight
+		if (fight.record.hasOtherPlayers())
+		{
+			panelComponent.getChildren().add(TitleComponent.builder()
+				.text("Party")
+				.color(Color.ORANGE)
+				.build());
+			for (Map.Entry<String, Map<String, WeaponStats>> e : fight.record.getPlayers().entrySet())
+			{
+				panelComponent.getChildren().add(LineComponent.builder()
+					.left(e.getKey())
+					.leftColor(Color.LIGHT_GRAY)
+					.right(String.valueOf(KillRecord.totalDamage(e.getValue())))
+					.build());
+			}
+		}
+
 		panelComponent.setPreferredSize(new Dimension(190, 0));
 		return super.render(graphics);
 	}
