@@ -32,6 +32,14 @@ public class WeaponStats
 		maxHit = Math.max(maxHit, other.maxHit);
 	}
 
+	/** Take away a fight's hits, e.g. when that fight is deleted. The max hit is left as is. */
+	void subtract(WeaponStats other)
+	{
+		hits = Math.max(0, hits - other.hits);
+		zeros = Math.max(0, zeros - other.zeros);
+		damage = Math.max(0, damage - other.damage);
+	}
+
 	WeaponStats copy()
 	{
 		WeaponStats c = new WeaponStats();
@@ -44,6 +52,7 @@ public class WeaponStats
 		return hits;
 	}
 
+	/** Hits that did 0 damage. Since May 2024 a player's successful hit always does at least 1, so these are misses. */
 	public int getZeros()
 	{
 		return zeros;
@@ -64,7 +73,7 @@ public class WeaponStats
 		return hits == 0 ? 0 : (double) damage / hits;
 	}
 
-	/** Share of hits that did damage, 0-100. */
+	/** Accuracy: share of hits that did damage, 0-100. */
 	public double getNonZeroPercent()
 	{
 		return hits == 0 ? 0 : 100.0 * (hits - zeros) / hits;

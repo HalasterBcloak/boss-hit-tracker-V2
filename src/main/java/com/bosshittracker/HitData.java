@@ -8,5 +8,7 @@ import java.util.Map;
  */
 public class HitData
 {
+	/** Format version, used to run one-time upgrades of older saved data. */
+	int version;
 	Map<String, BossStats> bosses = new LinkedHashMap<>();
 }

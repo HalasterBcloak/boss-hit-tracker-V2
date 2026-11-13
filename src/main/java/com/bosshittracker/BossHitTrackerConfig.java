@@ -4,6 +4,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.Range;
+import net.runelite.client.config.Units;
 
 @ConfigGroup(BossHitTrackerConfig.GROUP)
 public interface BossHitTrackerConfig extends Config
@@ -65,12 +66,58 @@ public interface BossHitTrackerConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "recordFailed",
+		name = "Record failed attempts",
+		description = "Save fights where the boss wasn't killed (you or your team died, you left, or it reset) as failed attempts, with all the damage you dealt. They're listed with your kills but don't count towards kill count or lifetime weapon totals.",
+		position = 5
+	)
+	default boolean recordFailed()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "includeFailedInTotals",
+		name = "Failed attempts in totals",
+		description = "Include the damage from failed attempts in each boss's lifetime weapon totals and the lifetime CSV. Kill count and average per kill always count kills only.",
+		position = 6
+	)
+	default boolean includeFailedInTotals()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "pbMessages",
+		name = "Personal best messages",
+		description = "Show a chat message when a kill beats your fastest solo kill, most damage in a kill, or highest hit for that boss",
+		position = 7
+	)
+	default boolean pbMessages()
+	{
+		return true;
+	}
+
+	@Range(min = 0, max = 600)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "resumeWindow",
+		name = "Resume fight within",
+		description = "If a boss leaves your view while still alive (e.g. Sotetseg's shadow realm, walking out of range) and you hit it again within this time, it continues as the same fight. Set to 0 to always start a new fight.",
+		position = 8
+	)
+	default int resumeWindow()
+	{
+		return 120;
+	}
+
 	@Range(min = 1, max = 200)
 	@ConfigItem(
 		keyName = "historySize",
 		name = "Kills kept per boss",
 		description = "How many individual kills to keep in each boss's kill history",
-		position = 5
+		position = 9
 	)
 	default int historySize()
 	{
