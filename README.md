@@ -76,6 +76,7 @@ Data is saved per RuneScape account in `.runelite/plugin-data/boss-hit-tracker/`
 - **Extra NPCs to track**: comma-separated names to add, e.g. `Tormented Demon, Wyrm`.
 - **Show fight overlay**
 - **Track spells** (on by default): magic hits are listed per spell, e.g. `Kodai wand (Ice Barrage)`. Works for spells you click to cast and for autocast.
+- **Separate special attacks** (on by default): list special attack hits on their own, e.g. `Dragon claws (spec)`.
 - **Party breakdown** (on by default): share your hits with your RuneLite Party and record each player's hits per weapon.
 - **Record failed attempts** (on by default): save fights where the boss wasn't killed.
 - **Failed attempts in totals** (off by default): include failed attempts' damage in the lifetime weapon totals and lifetime CSV.
@@ -107,5 +108,9 @@ Alternatively, from a terminal in the project folder: `./gradlew run` (Windows: 
 - Members of multi-NPC bosses are matched by their exact NPC ID, so NPCs that share a name (the two Dagon'hai Monks) are kept apart. Kills recorded before version 1.6 stay under their old names (e.g. Dusk, Dawn). Alternate forms of the same boss (Tekton enraged, Doom of Mokhaiotl shielded/burrowed, the enraged Moons) are recorded under the main boss.
 - Spells: a manual cast is read from the spell you click; autocast is read from your autocast setting.
 - Party: the game doesn't say who dealt other players' hits, so each player's plugin reports their own hits to the party. Lifetime totals and CSV export cover your own hits only.
-- Misses: since May 2024 a player's successful hit always does at least 1 damage, so a 0 is a miss (or a splash). Accuracy is the share of attacks that weren't misses.
-- Special attacks are counted under the weapon's normal name, not separately.
+- Misses: since May 2024 a player's successful hit always does at least 1 damage, so a 0 is a miss (or a splash).
+- Accuracy is per **attack**: weapons that hit several times per attack count all of an attack's hits as one attack, which landed if any hit did damage. Their cards show **Attacks** instead of Misses. Kills recorded before this was added use per-hit accuracy. Covered weapons:
+  - Normal attacks: Scythe of Vitur (all versions), Dual macuahuitl, Tonalztics of Ralos, Dark bow, Sulphur blades, Glacial temotli, Earthbound and Infernal tecpatl, Torag's hammers, Twinflame staff and Karil's crossbow.
+  - Special attacks: Dragon and Burning claws, Dragon and Abyssal dagger, Dragon knife, Magic shortbow, Webweaver bow, Crystal and Dragon halberd, Dinh's bulwark, Rosewood blowpipe, Saradomin sword and the Bounty Hunter Vesta's spear.
+  - The Granite maul's special is a separate attack, so each smash counts on its own.
+- Special attacks are spotted from your special attack energy dropping as the attack starts, and listed on their own, e.g. **Dragon claws (spec)**, with their own hits, damage, max hit and accuracy. Turn off **Separate special attacks** to count them under the weapon's normal name. Fights recorded before 1.8.3 have their specs mixed in with normal hits.

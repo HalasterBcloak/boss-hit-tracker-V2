@@ -56,10 +56,21 @@ public interface BossHitTrackerConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "separateSpecs",
+		name = "Separate special attacks",
+		description = "List special attack hits on their own, e.g. \"Dragon claws (spec)\", instead of under the weapon's normal name",
+		position = 4
+	)
+	default boolean separateSpecs()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "partyBreakdown",
 		name = "Party breakdown",
 		description = "When you're in a RuneLite Party, share your hits with the party and record each player's hits per weapon for every kill. Party members need Boss Hit Tracker installed; anyone else is listed as \"Other players\".",
-		position = 4
+		position = 5
 	)
 	default boolean partyBreakdown()
 	{
@@ -70,7 +81,7 @@ public interface BossHitTrackerConfig extends Config
 		keyName = "recordFailed",
 		name = "Record failed attempts",
 		description = "Save fights where the boss wasn't killed (you or your team died, you left, or it reset) as failed attempts, with all the damage you dealt. They're listed with your kills but don't count towards kill count or lifetime weapon totals.",
-		position = 5
+		position = 6
 	)
 	default boolean recordFailed()
 	{
@@ -81,7 +92,7 @@ public interface BossHitTrackerConfig extends Config
 		keyName = "includeFailedInTotals",
 		name = "Failed attempts in totals",
 		description = "Include the damage from failed attempts in each boss's lifetime weapon totals and the lifetime CSV. Kill count and average per kill always count kills only.",
-		position = 6
+		position = 7
 	)
 	default boolean includeFailedInTotals()
 	{
@@ -92,7 +103,7 @@ public interface BossHitTrackerConfig extends Config
 		keyName = "pbMessages",
 		name = "Personal best messages",
 		description = "Show a chat message when a kill beats your fastest solo kill, most damage in a kill, or highest hit for that boss",
-		position = 7
+		position = 8
 	)
 	default boolean pbMessages()
 	{
@@ -105,7 +116,7 @@ public interface BossHitTrackerConfig extends Config
 		keyName = "resumeWindow",
 		name = "Resume fight within",
 		description = "If a boss leaves your view while still alive (e.g. Sotetseg's shadow realm, walking out of range) and you hit it again within this time, it continues as the same fight. Set to 0 to always start a new fight.",
-		position = 8
+		position = 9
 	)
 	default int resumeWindow()
 	{
@@ -117,7 +128,7 @@ public interface BossHitTrackerConfig extends Config
 		keyName = "historySize",
 		name = "Kills kept per boss",
 		description = "How many individual kills to keep in each boss's kill history",
-		position = 9
+		position = 10
 	)
 	default int historySize()
 	{

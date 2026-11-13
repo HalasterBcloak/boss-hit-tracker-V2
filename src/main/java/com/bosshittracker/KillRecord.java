@@ -43,6 +43,24 @@ public class KillRecord
 		weapons.computeIfAbsent(weapon, w -> new WeaponStats()).addHit(amount);
 	}
 
+	/** A new attack with this weapon began (its first hit). It counts as missed until one of its hits does damage. */
+	void startAttack(String weapon)
+	{
+		WeaponStats w = weapons.computeIfAbsent(weapon, k -> new WeaponStats());
+		w.attacks++;
+		w.missedAttacks++;
+	}
+
+	/** One of the current attack's hits did damage. */
+	void attackLanded(String weapon)
+	{
+		WeaponStats w = weapons.get(weapon);
+		if (w != null && w.missedAttacks > 0)
+		{
+			w.missedAttacks--;
+		}
+	}
+
 	void addPlayerHit(String player, String weapon, int amount)
 	{
 		if (players == null)

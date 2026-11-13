@@ -485,7 +485,15 @@ class BossHitTrackerPanel extends PluginPanel
 		double share = totalDamage == 0 ? 0 : 100.0 * w.getDamage() / totalDamage;
 		card.add(small(String.format("Hits %s  ·  Dmg %s (%.0f%%)", NUMBER.format(w.getHits()), NUMBER.format(w.getDamage()), share)));
 		card.add(small(String.format("Avg %.1f  ·  Max %d", w.getAverageHit(), w.getMaxHit())));
-		card.add(small(String.format("Misses %s  ·  Accuracy %.0f%%", NUMBER.format(w.getZeros()), w.getNonZeroPercent())));
+		if (w.hasMultiHitAttacks())
+		{
+			// e.g. the Scythe: its three hits are one attack, and accuracy is per attack
+			card.add(small(String.format("Attacks %s  ·  Accuracy %.0f%%", NUMBER.format(w.getAttacks()), w.getAccuracy())));
+		}
+		else
+		{
+			card.add(small(String.format("Misses %s  ·  Accuracy %.0f%%", NUMBER.format(w.getZeros()), w.getAccuracy())));
+		}
 		return card;
 	}
 

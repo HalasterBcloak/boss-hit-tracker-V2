@@ -91,6 +91,8 @@ public class BossHitTrackerPlugin extends Plugin
 	private static final String UNARMED = "Unarmed";
 	/** How long (in game ticks) an attack animation's weapon is used for the hitsplats that follow it. */
 	private static final int ATTACK_WEAPON_TICKS = 8;
+	/** Added to the weapon name for special attack hits, e.g. "Dragon claws (spec)". */
+	static final String SPEC_SUFFIX = " (spec)";
 	/**
 	 * How long a multi-stage boss's fight is kept between phases, if the next phase appears as a new NPC
 	 * (e.g. Ocellus leaving while you fight The Blade). Longer than the normal resume time, since a phase can take a while.
@@ -161,8 +163,17 @@ public class BossHitTrackerPlugin extends Plugin
 	// projectile is in flight still credits the weapon that made the attack.
 	private String lastAttackWeapon;
 	private int lastAttackTick = -100;
+	// Special attack energy last seen, and the tick it last dropped (you used a special attack)
+	private int specEnergy = -1;
+	private int specTick = -100;
 	// Spell you clicked to cast on an NPC, used for your next attack
 	private String pendingCast;
+	// The attack your latest hit belonged to, so a multi-hit attack (e.g. the Scythe) counts once for accuracy
+	private NPC attackNpc;
+	private String attackWeapon;
+	private ActiveFight attackFight;
+	private int attackTick;
+	private boolean attackLanded;
 	// Spell clicked in the autocast menu, waiting for the game to confirm its number
 	private String pendingAutocastName;
 	private int pendingAutocastTick = -100;
@@ -244,6 +255,8 @@ public class BossHitTrackerPlugin extends Plugin
 		GameState state = event.getGameState();
 		if (state == GameState.HOPPING || state == GameState.LOGIN_SCREEN)
 		{
+			specEnergy = -1;
+			specTick = -100;
 			// Any fight in progress can't finish now: save it as a failed attempt
 			boolean recorded = false;
 			long now = System.currentTimeMillis();
@@ -284,8 +297,19 @@ public class BossHitTrackerPlugin extends Plugin
 		}
 		if (local.getInteracting() instanceof NPC)
 		{
-			lastAttackWeapon = attackLabel();
-			lastAttackTick = client.getTickCount();
+			int tick = client.getTickCount();
+			// The game lowers your special energy just before the special attack's animation
+			if (config.separateSpecs() && tick - specTick <= 1)
+			{
+				pendingCast = null;
+				lastAttackWeapon = currentWeapon() + SPEC_SUFFIX;
+				specTick = -100;
+			}
+			else
+			{
+				lastAttackWeapon = attackLabel();
+			}
+			lastAttackTick = tick;
 		}
 	}
 
@@ -330,6 +354,26 @@ public class BossHitTrackerPlugin extends Plugin
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
+		if (event.getVarpId() == VarPlayerID.SA_ENERGY)
+		{
+			int energy = event.getValue();
+			boolean used = specEnergy >= 0 && energy < specEnergy;
+			specEnergy = energy;
+			if (used && config.separateSpecs())
+			{
+				int tick = client.getTickCount();
+				if (lastAttackTick == tick && lastAttackWeapon != null && !lastAttackWeapon.endsWith(SPEC_SUFFIX))
+				{
+					// The attack's animation came first this tick: it was the special attack
+					lastAttackWeapon = currentWeapon() + SPEC_SUFFIX;
+				}
+				else
+				{
+					specTick = tick;
+				}
+			}
+			return;
+		}
 		// The game confirmed a new autocast spell right after you clicked one
 		if (event.getVarbitId() == VarbitID.AUTOCAST_SPELL && pendingAutocastName != null
 			&& client.getTickCount() - pendingAutocastTick <= 10)
@@ -564,6 +608,25 @@ public class BossHitTrackerPlugin extends Plugin
 			{
 				ActiveFight fight = fightFor(npc, name);
 				fight.record.addHit(weapon, amount);
+				// Count attacks for accuracy: all hits of one multi-hit attack on this target are one attack
+				int tick = client.getTickCount();
+				int window = MultiHit.windowTicks(weapon);
+				boolean sameAttack = window >= 0 && npc == attackNpc && fight == attackFight
+					&& weapon.equals(attackWeapon) && tick - attackTick <= window;
+				if (!sameAttack)
+				{
+					fight.record.startAttack(weapon);
+					attackNpc = npc;
+					attackWeapon = weapon;
+					attackFight = fight;
+					attackTick = tick;
+					attackLanded = false;
+				}
+				if (amount > 0 && !attackLanded)
+				{
+					fight.record.attackLanded(weapon);
+					attackLanded = true;
+				}
 				String phase = BossPhases.phaseOf(npc.getId());
 				if (phase != null)
 				{
@@ -1441,7 +1504,7 @@ public class BossHitTrackerPlugin extends Plugin
 	String exportCsv()
 	{
 		boolean withFailed = config.includeFailedInTotals();
-		StringBuilder sb = new StringBuilder("Boss,Kills,Failed attempts,Weapon,Hits,Misses,Accuracy %,Total damage,Average hit,Max hit\n");
+		StringBuilder sb = new StringBuilder("Boss,Kills,Failed attempts,Weapon,Attacks,Hits,Misses,Accuracy %,Total damage,Average hit,Max hit\n");
 		synchronized (lock)
 		{
 			List<String> names = new ArrayList<>(data.bosses.keySet());
@@ -1456,9 +1519,10 @@ public class BossHitTrackerPlugin extends Plugin
 						.append(stats.kills).append(',')
 						.append(stats.failedAttempts).append(',')
 						.append(csv(e.getKey())).append(',')
+						.append(w.attacks == 0 ? "" : String.valueOf(w.attacks)).append(',')
 						.append(w.hits).append(',')
 						.append(w.zeros).append(',')
-						.append(String.format("%.1f", w.getNonZeroPercent())).append(',')
+						.append(String.format("%.1f", w.getAccuracy())).append(',')
 						.append(w.damage).append(',')
 						.append(String.format("%.2f", w.getAverageHit())).append(',')
 						.append(w.maxHit).append('\n');
@@ -1475,7 +1539,7 @@ public class BossHitTrackerPlugin extends Plugin
 	String exportFightsCsv()
 	{
 		SimpleDateFormat date = new SimpleDateFormat("yyyy-MM-dd HH:mm");
-		StringBuilder sb = new StringBuilder("Boss,Fight,Result,Date,Duration (s),Section,Name,Player,Hits,Misses,Damage,Max hit\n");
+		StringBuilder sb = new StringBuilder("Boss,Fight,Result,Date,Duration (s),Section,Name,Player,Attacks,Hits,Misses,Damage,Max hit\n");
 		synchronized (lock)
 		{
 			List<String> names = new ArrayList<>(data.bosses.keySet());
@@ -1494,18 +1558,18 @@ public class BossHitTrackerPlugin extends Plugin
 					{
 						WeaponStats w = e.getValue();
 						sb.append(prefix).append("Weapon,").append(csv(e.getKey())).append(",You,")
-							.append(w.hits).append(',').append(w.zeros).append(',').append(w.damage).append(',').append(w.maxHit).append('\n');
+							.append(w.attacks == 0 ? "" : String.valueOf(w.attacks)).append(',').append(w.hits).append(',').append(w.zeros).append(',').append(w.damage).append(',').append(w.maxHit).append('\n');
 					}
 					for (Map.Entry<String, PhaseStats> e : k.getPhases().entrySet())
 					{
 						PhaseStats p = e.getValue();
-						sb.append(prefix).append("Phase,").append(csv(e.getKey())).append(",You,")
+						sb.append(prefix).append("Phase,").append(csv(e.getKey())).append(",You,,")
 							.append(p.hits).append(",,").append(p.damage).append(',').append(p.maxHit).append('\n');
 					}
 					for (Map.Entry<String, PhaseStats> e : k.getTargets().entrySet())
 					{
 						PhaseStats t = e.getValue();
-						sb.append(prefix).append("Target,").append(csv(e.getKey())).append(",You,")
+						sb.append(prefix).append("Target,").append(csv(e.getKey())).append(",You,,")
 							.append(t.hits).append(",,").append(t.damage).append(',').append(t.maxHit).append('\n');
 					}
 					for (Map.Entry<String, Map<String, WeaponStats>> p : k.getPlayers().entrySet())
@@ -1513,7 +1577,7 @@ public class BossHitTrackerPlugin extends Plugin
 						for (Map.Entry<String, WeaponStats> e : p.getValue().entrySet())
 						{
 							WeaponStats w = e.getValue();
-							sb.append(prefix).append("Party,").append(csv(e.getKey())).append(',').append(csv(p.getKey())).append(',')
+							sb.append(prefix).append("Party,").append(csv(e.getKey())).append(',').append(csv(p.getKey())).append(",,")
 								.append(w.hits).append(',').append(w.zeros).append(',').append(w.damage).append(',').append(w.maxHit).append('\n');
 						}
 					}

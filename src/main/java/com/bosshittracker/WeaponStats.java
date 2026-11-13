@@ -9,6 +9,10 @@ public class WeaponStats
 	int zeros;
 	long damage;
 	int maxHit;
+	/** Attacks made (a multi-hit attack like the Scythe's counts once). 0 for data saved before attacks were counted. */
+	int attacks;
+	/** Attacks where none of the hits did damage. */
+	int missedAttacks;
 
 	void addHit(int amount)
 	{
@@ -30,6 +34,8 @@ public class WeaponStats
 		zeros += other.zeros;
 		damage += other.damage;
 		maxHit = Math.max(maxHit, other.maxHit);
+		attacks += other.attacks;
+		missedAttacks += other.missedAttacks;
 	}
 
 	/** Take away a fight's hits, e.g. when that fight is deleted. The max hit is left as is. */
@@ -38,6 +44,8 @@ public class WeaponStats
 		hits = Math.max(0, hits - other.hits);
 		zeros = Math.max(0, zeros - other.zeros);
 		damage = Math.max(0, damage - other.damage);
+		attacks = Math.max(0, attacks - other.attacks);
+		missedAttacks = Math.max(0, missedAttacks - other.missedAttacks);
 	}
 
 	WeaponStats copy()
@@ -73,9 +81,34 @@ public class WeaponStats
 		return hits == 0 ? 0 : (double) damage / hits;
 	}
 
-	/** Accuracy: share of hits that did damage, 0-100. */
+	/** Share of hits that did damage, 0-100. */
 	public double getNonZeroPercent()
 	{
 		return hits == 0 ? 0 : 100.0 * (hits - zeros) / hits;
+	}
+
+	public int getAttacks()
+	{
+		return attacks;
+	}
+
+	public int getMissedAttacks()
+	{
+		return missedAttacks;
+	}
+
+	/** True when this weapon's attacks were counted and some landed as several hits (e.g. the Scythe). */
+	public boolean hasMultiHitAttacks()
+	{
+		return attacks > 0 && attacks != hits;
+	}
+
+	/**
+	 * Accuracy, 0-100: share of attacks where at least one hit did damage. A multi-hit attack counts
+	 * once. For data saved before attacks were counted, the share of hits that did damage.
+	 */
+	public double getAccuracy()
+	{
+		return attacks == 0 ? getNonZeroPercent() : 100.0 * (attacks - missedAttacks) / attacks;
 	}
 }
