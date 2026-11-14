@@ -1338,7 +1338,10 @@ public class BossHitTrackerPlugin extends Plugin
 	/** This account's data file: .runelite/plugin-data/boss-hit-tracker/[account].json */
 	private Filepath dataFile(String profileKey) throws IOException
 	{
-		return getPluginDirectory().join(profileKey.replaceAll("[^A-Za-z0-9_.-]", "_") + ".json");
+		Filepath dir = getPluginDirectory();
+		// RuneLite doesn't create the plugin's folder itself
+		dir.createDirectories();
+		return dir.join(profileKey.replaceAll("[^A-Za-z0-9_.-]", "_") + ".json");
 	}
 
 	private HitData readFile(String profileKey)
